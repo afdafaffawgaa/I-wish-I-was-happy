@@ -1,15 +1,40 @@
 {
   "status": "unavailable",
-  "fetched_at_jst": "2026-10-27T18:35:02+09:00",
-  "source": "Google Maps web UI (Playwright; experimental)",
-  "source_engine": null,
+  "fetched_at_jst": null,
+  "attempted_at_jst": "2026-10-27T21:11:43+09:00",
+  "source": null,
   "place": {
     "name": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
-    "address": "〒308-0041 茨城県筑西市乙863-2 やますビル2号館",
-    "place_id": "ChIJmam1ug5VH2ARWhSeQUqRe1g"
+    "address": "茨城県筑西市乙863-2"
   },
-  "unit": "relative_busyness_0_to_100_not_number_of_people",
+  "unit": "relative_busyness_index_not_headcount",
   "days": {
+    "sunday": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
     "monday": [
       null,
       null,
@@ -165,316 +190,22 @@
       null,
       null,
       null
-    ],
-    "sunday": [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null
     ]
   },
   "live": null,
   "diagnostics": [
     {
-      "locale": "en",
-      "url_path": "/maps/search/",
-      "error": null,
-      "scroll_trace": [
-        {
-          "step": 0,
-          "found": true,
-          "before": 0,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 1,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 2,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 3,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 4,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 5,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 6,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 7,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 8,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 9,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 10,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 11,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 12,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 13,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 14,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        },
-        {
-          "step": 15,
-          "found": true,
-          "before": 297,
-          "after": 297,
-          "max": 297
-        }
-      ],
-      "scroll_end": {
-        "rootCount": 0,
-        "groups": [],
-        "labelsSample": [],
-        "placeTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
-        "pageTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT - Google Maps",
-        "hasHeading": false,
-        "headingVisible": false,
-        "selectedDay": null,
-        "graphLabelCount": 0
-      },
-      "rootCount": 0,
-      "groups": [],
-      "labelsSample": [],
-      "placeTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
-      "pageTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT - Google Maps",
-      "hasHeading": false,
-      "headingVisible": false,
-      "selectedDay": null,
-      "graphLabelCount": 0,
-      "day_controls": []
+      "source": "google_search",
+      "verified_days": [],
+      "status": "failed",
+      "reason": "ValueError: Google Search response did not contain popular-times HTML"
     },
     {
-      "locale": "ja",
-      "url_path": "/maps/search/",
-      "error": null,
-      "scroll_trace": [
-        {
-          "step": 0,
-          "found": true,
-          "before": 0,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 1,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 2,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 3,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 4,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 5,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 6,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 7,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 8,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 9,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 10,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 11,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 12,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 13,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 14,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        },
-        {
-          "step": 15,
-          "found": true,
-          "before": 313,
-          "after": 313,
-          "max": 313
-        }
-      ],
-      "scroll_end": {
-        "rootCount": 0,
-        "groups": [],
-        "labelsSample": [],
-        "placeTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
-        "pageTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT - Google マップ",
-        "hasHeading": false,
-        "headingVisible": false,
-        "selectedDay": null,
-        "graphLabelCount": 0
-      },
-      "rootCount": 0,
-      "groups": [],
-      "labelsSample": [],
-      "placeTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
-      "pageTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT - Google マップ",
-      "hasHeading": false,
-      "headingVisible": false,
-      "selectedDay": null,
-      "graphLabelCount": 0,
-      "day_controls": []
+      "source": "google_maps",
+      "group_count": 0,
+      "status": "failed",
+      "reason": "ValueError: Maps groups missing (got 0, need 7)"
     }
   ],
-  "note": "Browser did not yield parseable Popular Times; this is NOT evidence that the store is empty."
+  "note": "NO fresh Google popular-times values retrieved. Null is NOT zero. No old data substituted."
 }
