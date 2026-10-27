@@ -99,40 +99,135 @@ def parse_groups(groups, now):
 # populartimes.js HTML structure: div[aria-label="Popular times at NAME"]
 # and its final child containing 7 day groups starting on Sunday.
 EXTRACT_JS = r'''() => {
-    const selector = '[aria-label^="Popular times at"], [aria-label*="混雑する時間帯"]';
-    const roots = [...document.querySelectorAll(selector)];
-    const labels = el => [...el.querySelectorAll('[aria-label]')]
-        .map(n => n.getAttribute('aria-label')).filter(Boolean);
     const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-    const result = {rootCount: roots.length, groups: [], labelsSample: [], placeTitle: '', pageTitle: document.title};
+    const jaDays = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'];
+    const enDays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const roots = [...document.querySelectorAll('[aria-label^="Popular times at"], [aria-label*="混雑する時間帯"]')];
+    const names = el => [...el.querySelectorAll('[aria-label]')]
+         .map(n => n.getAttribute('aria-label')).filter(Boolean);
     const h1 = document.querySelector('h1');
-    result.placeTitle = h1 ? h1.textContent.trim().slice(0,160) : '';
+    const result = {rootCount:roots.length, groups:[], labelsSample:[],
+        placeTitle:h1 ? h1.textContent.trim().slice(0,160) : '', pageTitle:document.title,
+        hasHeading:false, headingVisible:false, selectedDay:null, graphLabelCount:0};
+    // The old Maps layout kept seven charts (starting Sunday) under a single root.
     for (const root of roots) {
         const last = root.lastElementChild;
         const kids = last ? [...last.children] : [];
-        // Old layout keeps all seven day charts in order, including hidden ones.
         if (kids.length >= 7) {
-            const candidate = kids.slice(0,7).map((node,i)=>({day: dayNames[i], labels: labels(node)}));
-            if (candidate.some(c=>c.labels.some(s=>/%/.test(s)))) {
-                result.groups.push(...candidate);
+            const candidate = kids.slice(0,7).map((node,i)=>({day:dayNames[i],labels:names(node)}));
+            if (candidate.some(c => c.labels.some(s => /%/.test(s)))) {
+                result.groups = candidate;
                 break;
             }
         }
     }
-    if (!result.groups.length) {
-        // Collect candidates without assigning them to the wrong day. The
-        // controller may have only the selected day; that needs another method.
-        const root = roots[0];
-        if (root) result.labelsSample = labels(root).slice(0,160);
+    const headings = [...document.querySelectorAll('h2,h3,h4,span,div')]
+       .filter(e => e.children.length === 0 && /^(Popular times|混雑する時間帯)$/.test((e.textContent||'').trim()));
+    result.hasHeading = headings.length > 0;
+    const head = headings[0];
+    if (head) {
+       const r = head.getBoundingClientRect();
+       result.headingVisible = r.width > 0 && r.height > 0 && r.y >= 0 && r.bottom <= innerHeight;
     }
-    // Lightweight diagnostic sample when the expected graph structure changes.
-    if (!result.labelsSample.length) {
-        result.labelsSample = [...document.querySelectorAll('[aria-label]')]
-          .map(e=>e.getAttribute('aria-label')).filter(s=>/busy|popular|%|混雑|時間帯/i.test(s||''))
-          .slice(0,100);
+    // New Maps markup often has one currently-selected weekday, not seven DOM groups.
+    // Only assign labels if the weekday is explicit in the visible dropdown.
+    if (!result.groups.length && head) {
+      let parent = head;
+      for (let depth=0; depth<9 && parent; depth++,parent=parent.parentElement) {
+        const raw = (parent.innerText || '').slice(0,2200);
+        const topText = (parent.innerText||'').slice(0,130);
+        let day = null;
+        const line = topText.split('\n').slice(0,5).join(' ');
+        for (let i=0;i<7;i++) {
+           if (line.includes(jaDays[i]) || line.toLowerCase().includes(enDays[i].toLowerCase())) {
+             day = dayNames[i]; break;
+           }
+        }
+        // Visible bars only, to avoid attributing a hidden day's data to this day.
+        const bars = [...parent.querySelectorAll('[aria-label]')].filter(n => {
+          const label = n.getAttribute('aria-label') || '';
+          if (!/%/.test(label)) return false;
+          const style = getComputedStyle(n), rect=n.getBoundingClientRect();
+          return style.display !== 'none' && style.visibility !== 'hidden' && rect.width>0 && rect.height>0;
+        }).map(n=>n.getAttribute('aria-label'));
+        if (bars.length >= 3 && day) {
+          result.selectedDay=day;
+          result.graphLabelCount=bars.length;
+          result.groups=[{day,labels:bars}];
+          break;
+        }
+        if (bars.length >= 3) {
+          result.graphLabelCount=Math.max(result.graphLabelCount,bars.length);
+          result.labelsSample=bars.slice(0,35);
+        }
+      }
     }
+    if (!result.labelsSample.length) result.labelsSample = [...document.querySelectorAll('[aria-label]')]
+       .map(n=>n.getAttribute('aria-label')).filter(s=>/busy|popular|%|混雑|時間帯/i.test(s||''))
+       .slice(0,70);
     return result;
 }'''
+
+
+# A screenshot showing the title and Photos at the bottom of the pane is proof
+# that the old code's [role="main"].scrollTop = scrollHeight was ineffective.
+# Scroll the actual left-hand panel, using a mouse wheel as a fallback.
+SCROLL_PANE_JS = r'''(amount) => {
+    const hit = document.elementFromPoint(Math.min(280,innerWidth*.3), Math.min(650,innerHeight-180));
+    const title = document.querySelector('h1');
+    const possibles = [];
+    for (const n of document.querySelectorAll('*')) {
+      const r = n.getBoundingClientRect();
+      if (r.width < 230 || r.height < 160 || r.right > 650 || r.x > 140 || r.bottom < 180) continue;
+      if (n.scrollHeight - n.clientHeight < 120) continue;
+      const y = getComputedStyle(n).overflowY;
+      if (!/auto|scroll|overlay/.test(y)) continue;
+      let score = 0;
+      if (hit && n.contains(hit)) score += 100;
+      if (title && n.contains(title)) score += 80;
+      if (r.x < 130 && r.right > 300) score += 30;
+      score += Math.min(30,(n.scrollHeight-n.clientHeight)/120);
+      possibles.push({n,score});
+    }
+    possibles.sort((a,b)=>b.score-a.score);
+    const el = possibles.length ? possibles[0].n : null;
+    if (!el) return {found:false, before:0, after:0, max:0};
+    const before = el.scrollTop;
+    el.scrollTop += amount;
+    return {found:true,before,after:el.scrollTop,max:el.scrollHeight-el.clientHeight};
+}'''
+
+
+def scroll_to_popular_times(page, diagnostics):
+    """Load the lazy-rendered Popular Times section in the Maps left pane."""
+    trace = []
+    page.mouse.move(260, min(630, page.viewport_size['height'] - 190))
+    for step in range(16):
+        snap = page.evaluate(EXTRACT_JS)
+        if snap.get('hasHeading') or snap.get('rootCount'):
+            # Bring the known heading into view (for reliable diagnostic screenshots).
+            for label in ('混雑する時間帯', 'Popular times'):
+                try:
+                    heading = page.get_by_text(label, exact=True).first
+                    if heading.count():
+                        heading.scroll_into_view_if_needed(timeout=2500)
+                        page.wait_for_timeout(550)
+                        break
+                except Exception:
+                    pass
+            trace.append({'step': step, 'heading': snap.get('hasHeading'), 'roots': snap.get('rootCount')})
+            break
+        moved = page.evaluate(SCROLL_PANE_JS, 490)
+        # Mouse wheels target the scrolling DIV even if the DOM layout moved.
+        # Don't wheel as well when the explicit scroll already worked: skipping
+        # the chart is otherwise likely on short business descriptions.
+        if moved['after'] <= moved['before']:
+            page.mouse.wheel(0, 490)
+        page.wait_for_timeout(600)
+        trace.append({'step': step, **moved})
+    diagnostics['scroll_trace'] = trace
+    diagnostics['scroll_end'] = page.evaluate(EXTRACT_JS)
+
 
 
 def extract_single_day_from_dropdown(page):
@@ -175,12 +270,10 @@ def get_page(browser, locale, debug_prefix):
     try:
         page.goto(url, wait_until='domcontentloaded', timeout=55000)
         page.wait_for_timeout(6500)
-        # Google sometimes needs the side-pane scrolled to load the chart.
-        page.evaluate('''() => {
-            let p = document.querySelector('[role="main"]');
-            if(p) p.scrollTop = p.scrollHeight;
-        }''')
-        page.wait_for_timeout(1500)
+        # The previous [role="main"] scroll did not move the scrolling pane.
+        # The diagnostic screenshots showed the place heading and Photos only.
+        scroll_to_popular_times(page, diagnostics)
+        page.wait_for_timeout(900)
         snapshot = page.evaluate(EXTRACT_JS)
         diagnostics.update(snapshot)
         seen_title = str(snapshot.get('placeTitle','')) + ' ' + str(snapshot.get('pageTitle',''))
