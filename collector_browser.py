@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Experimental Google Maps UI popular-times collector for LARRYFIT Shimodate.
+"""LARRYFIT fresh Google HTML collector v8.
 
-This reads publicly displayed information from the browser. Google doesn't offer an
-official Popular Times API. The interface may change and browser runs can be blocked.
-The script NEVER substitutes invented crowd numbers for unparsed data.
+Tries Google Search's weekly popular-times day switcher first; falls back to
+Google Maps's seven daily aria-label charts. It never ships cached/hardcoded
+popular-times values as if fetched today. No paid API or extension.
+
+WARNING: Google may restrict automated sessions; an offline parser test is
+not proof this fetch will work on GitHub Actions.
 """
 from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
@@ -17,338 +21,232 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'data'
 DEBUG = ROOT / 'browser_diagnostics'
-DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-CHRONO = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-PLACE_ID = 'ChIJmam1ug5VH2ARWhSeQUqRe1g'
-MAP_URL = 'https://www.google.com/maps/search/?' + urlencode({
-    'api': '1', 'query': '「マッチョのいない月3,300円24時間ジム」LARRYFIT 筑西市乙863-2',
-    'query_place_id': PLACE_ID, 'hl': 'en',
-})
-JST = ZoneInfo('Asia/Tokyo')
-PERCENT = re.compile(r'(?<!\d)(100|\d{1,2})\s*%')
-AMPM = re.compile(r'\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([AP])\.?M\.?\b', re.I)
-CLOCK24 = re.compile(r'(?<!\d)([01]?\d|2[0-3]):[0-5]\d(?!\d)')
-JAPANESE_CLOCK = re.compile(r'(午前|午後)?\s*(\d{1,2})\s*時')
+DAYS = ('sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday')
+PLACE = '「マッチョのいない月3,300円24時間ジム」LARRYFIT'
+SEARCH_URL = 'https://www.google.com/search?' + urlencode({'q': PLACE, 'hl': 'ja', 'gl': 'jp'})
+MAPS_URL = ('https://www.google.com/maps/place/'
+ '%E3%80%8C%E3%83%9E%E3%83%83%E3%83%81%E3%83%A7%E3%81%AE%E3%81%84%E3%81%AA%E3%81%84%E6%9C%883,300%E5%86%8624%E6%99%82%E9%96%93%E3%82%B8%E3%83%A0%E3%80%8DLARRYFIT/'
+ '@36.3015197,139.9773529,1093m/data=!3m2!1e3!4b1!4m6!3m5!1s0x601f550ebab5a999:0x587b914a419e145a!8m2!3d36.3015197!4d139.9773529!16s%2Fg%2F11vc2x23fh?hl=ja')
 
+# CSS data-hour values 24..27 denote 00:00..03:00 of NEXT calendar day.
+# Heights / 75px match the EXACT percentages in the user's supplied Search
+# and Maps snippets on Tuesday; this is NOT a universal Google API guarantee.
+SEARCH_JS = r'''() => {
+  const root = document.querySelector('[data-attrid="kc:/local:busyness"]');
+  if (!root) return {reason:'Search busy widget missing', selected:0, rows:[]};
+  const active = root.querySelector('[data-day][aria-checked="true"]');
+  const selected = active ? Number(active.getAttribute('data-day')) : 0;
+  const bars = [...root.querySelectorAll('[data-hour]')];
+  const rows = bars.map(el => {
+    const h = Number(el.getAttribute('data-hour'));
+    const label = el.getAttribute('aria-label') || '';
+    const bar = el.querySelector('.cuRVnd');
+    const cssHeight = bar ? parseFloat(bar.style.height) : NaN;
+    const match = label.match(/混雑度は\s*(\d{1,3})\s*%/);
+    const pct = match ? Number(match[1]) : (Number.isFinite(cssHeight) ? Math.round(cssHeight/75*100) : null);
+    return {h,pct,estimated:!match,height:cssHeight};
+  });
+  return {selected,rows,title:document.title,hasWidget:true};
+}'''
 
-def empty_weekly():
-    return {d: [None] * 24 for d in DAYS}
-
-
-def count_values(days):
-    return sum(v is not None for hours in days.values() for v in hours)
-
-
-def hour_of(label):
-    txt = str(label).replace('\u202f', ' ').replace('\xa0', ' ')
-    m = AMPM.search(txt)
-    if m:
-        h = int(m.group(1))
-        if not 1 <= h <= 12:
-            return None
-        return (h % 12) + (12 if m.group(3).upper() == 'P' else 0)
-    m = CLOCK24.search(txt)
-    if m:
-        return int(m.group(1))
-    m = JAPANESE_CLOCK.search(txt)
-    if m:
-        prefix, h = m.group(1), int(m.group(2))
-        if h > 23 or (prefix is not None and h > 12):
-            return None
-        if prefix == '午後':
-            return h % 12 + 12
-        if prefix == '午前':
-            return h % 12
-        return h
-    return None
-
-
-def parse_bar(label):
-    """Return (hour, usual_score, live_score); no unsupported inference."""
-    hour = hour_of(label)
-    nums = [int(x) for x in PERCENT.findall(str(label))]
-    if hour is None or not nums:
-        return None
-    txt = str(label).casefold()
-    if len(nums) >= 2 and ('currently' in txt or 'right now' in txt or '現在' in txt):
-        # Google sometimes puts the live estimate first and usual estimate second.
-        return (hour, nums[1], nums[0])
-    return (hour, nums[0], None)
-
-
-def parse_groups(groups, now):
-    days = empty_weekly()
-    live = None
-    for group in groups:
-        day = group.get('day')
-        if day not in DAYS:
-            continue
-        for label in group.get('labels', []):
-            parsed = parse_bar(label)
-            if not parsed:
-                continue
-            hour, typical, current = parsed
-            days[day][hour] = typical
-            if current is not None and day == DAYS[now.weekday()] and hour == now.hour:
-                live = {'day': day, 'hour': hour, 'score': current,
-                        'typical_score': typical, 'info': 'From Google Maps accessibility label'}
-    return days, live
-
-
-# Browser-side extraction. The first strategy follows the public open-source
-# populartimes.js HTML structure: div[aria-label="Popular times at NAME"]
-# and its final child containing 7 day groups starting on Sunday.
-EXTRACT_JS = r'''() => {
-    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-    const jaDays = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'];
-    const enDays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    const roots = [...document.querySelectorAll('[aria-label^="Popular times at"], [aria-label*="混雑する時間帯"]')];
-    const names = el => [...el.querySelectorAll('[aria-label]')]
-         .map(n => n.getAttribute('aria-label')).filter(Boolean);
-    const h1 = document.querySelector('h1');
-    const result = {rootCount:roots.length, groups:[], labelsSample:[],
-        placeTitle:h1 ? h1.textContent.trim().slice(0,160) : '', pageTitle:document.title,
-        hasHeading:false, headingVisible:false, selectedDay:null, graphLabelCount:0};
-    // The old Maps layout kept seven charts (starting Sunday) under a single root.
-    for (const root of roots) {
-        const last = root.lastElementChild;
-        const kids = last ? [...last.children] : [];
-        if (kids.length >= 7) {
-            const candidate = kids.slice(0,7).map((node,i)=>({day:dayNames[i],labels:names(node)}));
-            if (candidate.some(c => c.labels.some(s => /%/.test(s)))) {
-                result.groups = candidate;
-                break;
-            }
-        }
-    }
-    const headings = [...document.querySelectorAll('h2,h3,h4,span,div')]
-       .filter(e => e.children.length === 0 && /^(Popular times|混雑する時間帯)$/.test((e.textContent||'').trim()));
-    result.hasHeading = headings.length > 0;
-    const head = headings[0];
-    if (head) {
-       const r = head.getBoundingClientRect();
-       result.headingVisible = r.width > 0 && r.height > 0 && r.y >= 0 && r.bottom <= innerHeight;
-    }
-    // New Maps markup often has one currently-selected weekday, not seven DOM groups.
-    // Only assign labels if the weekday is explicit in the visible dropdown.
-    if (!result.groups.length && head) {
-      let parent = head;
-      for (let depth=0; depth<9 && parent; depth++,parent=parent.parentElement) {
-        const raw = (parent.innerText || '').slice(0,2200);
-        const topText = (parent.innerText||'').slice(0,130);
-        let day = null;
-        const line = topText.split('\n').slice(0,5).join(' ');
-        for (let i=0;i<7;i++) {
-           if (line.includes(jaDays[i]) || line.toLowerCase().includes(enDays[i].toLowerCase())) {
-             day = dayNames[i]; break;
-           }
-        }
-        // Visible bars only, to avoid attributing a hidden day's data to this day.
-        const bars = [...parent.querySelectorAll('[aria-label]')].filter(n => {
-          const label = n.getAttribute('aria-label') || '';
-          if (!/%/.test(label)) return false;
-          const style = getComputedStyle(n), rect=n.getBoundingClientRect();
-          return style.display !== 'none' && style.visibility !== 'hidden' && rect.width>0 && rect.height>0;
-        }).map(n=>n.getAttribute('aria-label'));
-        if (bars.length >= 3 && day) {
-          result.selectedDay=day;
-          result.graphLabelCount=bars.length;
-          result.groups=[{day,labels:bars}];
-          break;
-        }
-        if (bars.length >= 3) {
-          result.graphLabelCount=Math.max(result.graphLabelCount,bars.length);
-          result.labelsSample=bars.slice(0,35);
-        }
-      }
-    }
-    if (!result.labelsSample.length) result.labelsSample = [...document.querySelectorAll('[aria-label]')]
-       .map(n=>n.getAttribute('aria-label')).filter(s=>/busy|popular|%|混雑|時間帯/i.test(s||''))
-       .slice(0,70);
-    return result;
+MAPS_JS = r'''() => {
+  const region = [...document.querySelectorAll('[role="region"][aria-label]')]
+     .find(e=>/混雑する時間帯/.test(e.getAttribute('aria-label')||'') && /LARRYFIT/i.test(e.getAttribute('aria-label')||''));
+  if (!region) return {reason:'Maps popular-times chart missing',days:[]};
+  const sections = [...region.querySelectorAll('div.g2BVhd')];
+  const days = sections.map(el => [...el.querySelectorAll('[role="img"][aria-label]')]
+    .map(bar => bar.getAttribute('aria-label')));
+  return {days,sectionCount:sections.length};
 }'''
 
 
-# A screenshot showing the title and Photos at the bottom of the pane is proof
-# that the old code's [role="main"].scrollTop = scrollHeight was ineffective.
-# Scroll the actual left-hand panel, using a mouse wheel as a fallback.
-SCROLL_PANE_JS = r'''(amount) => {
-    const hit = document.elementFromPoint(Math.min(280,innerWidth*.3), Math.min(650,innerHeight-180));
-    const title = document.querySelector('h1');
-    const possibles = [];
-    for (const n of document.querySelectorAll('*')) {
-      const r = n.getBoundingClientRect();
-      if (r.width < 230 || r.height < 160 || r.right > 650 || r.x > 140 || r.bottom < 180) continue;
-      if (n.scrollHeight - n.clientHeight < 120) continue;
-      const y = getComputedStyle(n).overflowY;
-      if (!/auto|scroll|overlay/.test(y)) continue;
-      let score = 0;
-      if (hit && n.contains(hit)) score += 100;
-      if (title && n.contains(title)) score += 80;
-      if (r.x < 130 && r.right > 300) score += 30;
-      score += Math.min(30,(n.scrollHeight-n.clientHeight)/120);
-      possibles.push({n,score});
-    }
-    possibles.sort((a,b)=>b.score-a.score);
-    const el = possibles.length ? possibles[0].n : null;
-    if (!el) return {found:false, before:0, after:0, max:0};
-    const before = el.scrollTop;
-    el.scrollTop += amount;
-    return {found:true,before,after:el.scrollTop,max:el.scrollHeight-el.clientHeight};
-}'''
+def from_search_days(results: dict[int, dict]):
+    """Accept 7 graph days (1=Mon, 7=Sun), each containing 4..27."""
+    if set(results) != set(range(1, 8)):
+        raise ValueError(f'Search weekday switches incomplete: {sorted(results)}')
+    graph = {}
+    for daynum in range(1, 8):
+        r = results[daynum]
+        if int(r.get('selected', 0)) != daynum:
+            raise ValueError(f'Wrong selected weekday: want={daynum}, seen={r.get("selected")}')
+        hours = {}
+        rows = r.get('rows') or []
+        if len(rows) != 24:
+            raise ValueError(f'Day {daynum} has {len(rows)} bars, expected 24')
+        for bar in rows:
+            h, value = bar.get('h'), bar.get('pct')
+            if (not isinstance(h, int) or isinstance(h, bool) or not 4 <= h <= 27
+                or not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not 0 <= value <= 100 or h in hours):
+                raise ValueError(f'Invalid search bar: day={daynum} bar={bar}')
+            hours[h] = int(round(value))
+        if set(hours) != set(range(4,28)):
+            raise ValueError(f'Day {daynum} hours not 4..27')
+        graph[daynum % 7] = hours
+    # Map 4..23 to graph day; 0..3 to previous graph day (24..27).
+    days = {}
+    for di, name in enumerate(DAYS):
+        current = graph[di]
+        previous = graph[(di-1) % 7]
+        days[name] = [previous[h+24] if h < 4 else current[h] for h in range(24)]
+    return days
 
 
-def scroll_to_popular_times(page, diagnostics):
-    """Load the lazy-rendered Popular Times section in the Maps left pane."""
-    trace = []
-    page.mouse.move(260, min(630, page.viewport_size['height'] - 190))
-    for step in range(16):
-        snap = page.evaluate(EXTRACT_JS)
-        if snap.get('hasHeading') or snap.get('rootCount'):
-            # Bring the known heading into view (for reliable diagnostic screenshots).
-            for label in ('混雑する時間帯', 'Popular times'):
-                try:
-                    heading = page.get_by_text(label, exact=True).first
-                    if heading.count():
-                        heading.scroll_into_view_if_needed(timeout=2500)
-                        page.wait_for_timeout(550)
-                        break
-                except Exception:
-                    pass
-            trace.append({'step': step, 'heading': snap.get('hasHeading'), 'roots': snap.get('rootCount')})
-            break
-        moved = page.evaluate(SCROLL_PANE_JS, 490)
-        # Mouse wheels target the scrolling DIV even if the DOM layout moved.
-        # Don't wheel as well when the explicit scroll already worked: skipping
-        # the chart is otherwise likely on short business descriptions.
-        if moved['after'] <= moved['before']:
-            page.mouse.wheel(0, 490)
-        page.wait_for_timeout(600)
-        trace.append({'step': step, **moved})
-    diagnostics['scroll_trace'] = trace
-    diagnostics['scroll_end'] = page.evaluate(EXTRACT_JS)
+def from_maps_labels(groups):
+    """Seven Maps groups from Sunday to Saturday; each 4..27 rollover."""
+    if len(groups) != 7:
+        raise ValueError(f'Maps groups missing (got {len(groups)}, need 7)')
+    graphs = {}
+    pat = re.compile(r'(\d{1,2})時の混雑度は\s*(\d{1,3})\s*%')
+    for day_idx, labels in enumerate(groups):
+        if len(labels) != 24:
+            raise ValueError(f'Maps group {day_idx} has {len(labels)} bars')
+        values = {}
+        for index, label in enumerate(labels):
+            m = pat.search(label)
+            if not m:
+                raise ValueError(f'Unparseable aria label day={day_idx}: {label[:70]}')
+            hour, pct = map(int, m.groups())
+            expected = (index + 4) % 24
+            if hour != expected or not 0 <= pct <= 100:
+                raise ValueError(f'Unexpected bar order/value, day={day_idx} hour={hour}')
+            values[index+4] = pct
+        graphs[day_idx] = values
+    return {name:[graphs[(di-1)%7][h+24] if h < 4 else graphs[di][h]
+                  for h in range(24)] for di,name in enumerate(DAYS)}
 
 
+def save(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
 
-def extract_single_day_from_dropdown(page):
-    """Best-effort newer layout: choose each weekday in the 'Popular times' day dropdown.
 
-    No data is attributed to a day unless the day selection is verified.
-    """
-    found = []
-    # Try the known Google Maps day-selector control inside the Popular times region.
-    # This is intentionally conservative: a failed selector returns empty, not made-up data.
-    js = r'''() => {
-        const head = [...document.querySelectorAll('*')].find(e => e.children.length === 0 &&
-            /^(Popular times|混雑する時間帯)$/.test((e.textContent||'').trim()));
-        if (!head) return null;
-        let parent = head;
-        for (let i=0;i<5;i++) {
-            if (!parent.parentElement) break;
-            parent = parent.parentElement;
-            const buttons = [...parent.querySelectorAll('button,[role="button"],select')];
-            if (buttons.length > 1 && buttons.length < 12) {
-                return buttons.map(b=>({text:(b.textContent||'').trim(),aria:b.getAttribute('aria-label'),
-                    title:b.getAttribute('title'),tag:b.tagName}));
-            }
-        }
-        return null;
-    }'''
+def diagnostic_screenshot(page, tag):
+    DEBUG.mkdir(exist_ok=True)
     try:
-        found = page.evaluate(js) or []
+        page.screenshot(path=str(DEBUG/(tag+'.png')), timeout=7000)
     except Exception:
         pass
-    return found
 
 
-def get_page(browser, locale, debug_prefix):
-    page = browser.new_page(locale='ja-JP' if locale == 'ja' else 'en-US', viewport={'width': 1280, 'height': 1000})
-    # Locale can affect UI labels and whether busy bars render; query_place_id
-    # keeps us on the right listing rather than similarly named gyms.
-    url = MAP_URL.replace('hl=en', f'hl={locale}')
-    diagnostics = {'locale': locale, 'url_path': '/maps/search/', 'error': None}
+def collect_search(browser, attempts):
+    page = browser.new_page(locale='ja-JP', viewport={'width':1420,'height':1000})
+    diag = {'source':'google_search', 'verified_days':[]}
+    attempts.append(diag)
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=55000)
-        page.wait_for_timeout(6500)
-        # The previous [role="main"] scroll did not move the scrolling pane.
-        # The diagnostic screenshots showed the place heading and Photos only.
-        scroll_to_popular_times(page, diagnostics)
-        page.wait_for_timeout(900)
-        snapshot = page.evaluate(EXTRACT_JS)
-        diagnostics.update(snapshot)
-        seen_title = str(snapshot.get('placeTitle','')) + ' ' + str(snapshot.get('pageTitle',''))
-        if not re.search(r'LARRY\s*[- ]?\s*FIT|マッチョのいない', seen_title, re.I):
-            diagnostics['error'] = 'Wrong listing, or Google Maps did not render the target place title'
-            return [], diagnostics
-        diagnostics['day_controls'] = extract_single_day_from_dropdown(page)
-        # Keep diagnostic image as a GitHub Actions artifact only, NOT in Pages.
-        DEBUG.mkdir(parents=True, exist_ok=True)
+        page.goto(SEARCH_URL, wait_until='domcontentloaded', timeout=35000)
         try:
-            page.screenshot(path=str(DEBUG / f'{debug_prefix}_{locale}.png'), full_page=False, timeout=10000)
+            page.locator('[data-attrid="kc:/local:busyness"] [data-hour]').first.wait_for(timeout=12000)
         except Exception:
-            pass
-        return snapshot.get('groups', []), diagnostics
-    except Exception as exc:
-        diagnostics['error'] = f'{type(exc).__name__}: {str(exc)[:250]}'
-        return [], diagnostics
+            diagnostic_screenshot(page, 'search_widget_missing')
+            raise ValueError('Google Search response did not contain popular-times HTML')
+        result = {}
+        for day in range(1,8):
+            day_button = page.locator(f'[data-attrid="kc:/local:busyness"] [data-day="{day}"]')
+            day_button.click(timeout=5000)
+            page.wait_for_function('''n => {
+              const root=document.querySelector('[data-attrid="kc:/local:busyness"]');
+              const b=root && root.querySelector(`[data-day="${n}"]`);
+              return b && b.getAttribute('aria-checked')==='true' && root.querySelectorAll('[data-hour]').length>=24;
+            }''', arg=day, timeout=7000)
+            page.wait_for_timeout(400)
+            snapshot = page.evaluate(SEARCH_JS)
+            result[day] = snapshot
+            diag['verified_days'].append(day)
+            diag[f'day_{day}_bars'] = len(snapshot.get('rows',[]))
+        days = from_search_days(result)
+        # Seven individually switched days must not all yield one frozen 24h series.
+        if len({tuple(days[d]) for d in DAYS}) == 1:
+            raise ValueError('All seven weekdays identical: potential frozen Google widget')
+        diagnostic_screenshot(page, 'search_success')
+        diag['status'] = 'success'
+        return days, 'Google Search DOM height-calibrated (approximate 0-100)'
+    except Exception as e:
+        diag['status']='failed'; diag['reason']=f'{type(e).__name__}: {e}'[:350]
+        diagnostic_screenshot(page, 'search_failed')
+        return None, None
     finally:
         page.close()
 
 
-def save_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+def collect_maps(browser, attempts):
+    page = browser.new_page(locale='ja-JP', viewport={'width':1440,'height':950})
+    diag = {'source':'google_maps'}
+    attempts.append(diag)
+    try:
+        page.goto(MAPS_URL, wait_until='domcontentloaded', timeout=35000)
+        page.wait_for_timeout(3000)
+        # Google Maps panel scrolls inside an overflow-y DIV, not window.scrollY.
+        for _ in range(14):
+            parsed = page.evaluate(MAPS_JS)
+            if len(parsed.get('days',[])) == 7:
+                break
+            page.evaluate('''() => {
+               const x=260,y=Math.min(590,innerHeight-170);
+               const from=document.elementFromPoint(x,y);
+               let el=from;
+               while (el && !(el.scrollHeight>el.clientHeight+50 &&
+                     /auto|scroll/.test(getComputedStyle(el).overflowY))) el=el.parentElement;
+               if (el) el.scrollTop+=500;
+            }''')
+            page.mouse.move(260, min(590, 950-170))
+            page.mouse.wheel(0,500)
+            page.wait_for_timeout(600)
+        parsed = page.evaluate(MAPS_JS)
+        diag['group_count'] = len(parsed.get('days',[]))
+        days=from_maps_labels(parsed.get('days',[]))
+        diag['status']='success'
+        diagnostic_screenshot(page, 'maps_success')
+        return days,'Google Maps aria-label percentages (exact labels)'
+    except Exception as e:
+        diag['status']='failed'; diag['reason']=f'{type(e).__name__}: {e}'[:350]
+        diagnostic_screenshot(page, 'maps_failed')
+        return None,None
+    finally:
+        page.close()
 
 
 def run():
-    now = datetime.now(JST)
-    diagnostics = []
-    days, live = empty_weekly(), None
+    DATA.mkdir(exist_ok=True)
+    timestamp = datetime.now(ZoneInfo('Asia/Tokyo')).isoformat(timespec='seconds')
+    attempts = []
+    days = source = None
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
-                for locale in ('en', 'ja'):
-                    groups, diag = get_page(browser, locale, 'larryfit')
-                    diagnostics.append(diag)
-                    parsed, maybe_live = parse_groups(groups, now)
-                    if count_values(parsed) > count_values(days):
-                        days, live = parsed, maybe_live
-                    if count_values(days) >= 12:
-                        break
+                days,source = collect_search(browser, attempts)
+                if days is None:
+                    days,source = collect_maps(browser, attempts)
             finally:
                 browser.close()
-    except Exception as exc:
-        diagnostics.append({'error': f'{type(exc).__name__}: {str(exc)[:300]}'})
-    total = count_values(days)
-    status = 'ok' if total else 'unavailable'
+    except Exception as e:
+        attempts.append({'source':'browser_launch','status':'failed','reason':f'{type(e).__name__}: {e}'[:400]})
+    success = days is not None and sum(len(x) for x in days.values()) == 168
     output = {
-        'status': status, 'fetched_at_jst': now.isoformat(timespec='seconds'),
-        'source': 'Google Maps web UI (Playwright; experimental)',
-        'source_engine': 'browser_google_maps' if total else None,
-        'place': {'name': '「マッチョのいない月3,300円24時間ジム」LARRYFIT',
-                  'address': '〒308-0041 茨城県筑西市乙863-2 やますビル2号館', 'place_id': PLACE_ID},
-        'unit': 'relative_busyness_0_to_100_not_number_of_people',
-        'days': days, 'live': live,
-        'diagnostics': diagnostics,
-        'note': ('Found some public popular times labels; scores are relative and not actual headcounts.'
-                 if total else 'Browser did not yield parseable Popular Times; this is NOT evidence that the store is empty.'),
+        'status':'ok' if success else 'unavailable',
+        'fetched_at_jst':timestamp if success else None,
+        'attempted_at_jst':timestamp,
+        'source':source if success else None,
+        'place':{'name':PLACE,'address':'茨城県筑西市乙863-2'},
+        'unit':'relative_busyness_index_not_headcount',
+        'days':days if success else {x:[None]*24 for x in DAYS},
+        'live':None,
+        'diagnostics':attempts,
+        'note':('All 168 values fetched this run.' if success else
+                'NO fresh Google popular-times values retrieved. Null is NOT zero. No old data substituted.')
     }
-    DATA.mkdir(exist_ok=True)
-    save_json(DATA / 'latest.json', output)
-    with (DATA / 'history.jsonl').open('a', encoding='utf-8') as fh:
-        fh.write(json.dumps({
-            'fetched_at_jst': output['fetched_at_jst'], 'status': status,
-            'source_engine': output['source_engine'], 'live': live,
-            'graph_values': total,
-            'typical_current_hour': days[DAYS[now.weekday()]][now.hour],
-        }, ensure_ascii=False) + '\n')
-    print(json.dumps({'status': status, 'graph_values': total,
-                      'root_count': [v.get('rootCount',0) for v in diagnostics],
-                      'errors': [v.get('error') for v in diagnostics if v.get('error')]}, ensure_ascii=False))
-    return total
+    save(DATA/'latest.json',output)
+    with (DATA/'history.jsonl').open('a',encoding='utf-8') as f:
+        f.write(json.dumps({'attempted_at_jst':timestamp,'status':output['status'],
+            'fresh_hour_count':168 if success else 0,'source':source},ensure_ascii=False)+'\n')
+    if not success:
+        print('::warning title=LARRYFIT data unavailable::No fresh chart received. See latest.json diagnostics.')
+    print(json.dumps({'status':output['status'],'fresh_hour_count':168 if success else 0,
+                      'attempts':attempts},ensure_ascii=False))
+    return bool(success)
 
 
-if __name__ == '__main__':
+if __name__=='__main__':
     run()
