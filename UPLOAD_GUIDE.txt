@@ -1,0 +1,11 @@
+GitHubブラウザでのアップロード用
+
+1. GitHubリポジトリの最上位（Codeでファイル一覧の先頭）に戻る。
+2. Add file > Upload filesを選ぶ。
+3. このZIPを解凍し、中身のファイルとdata/testsフォルダを選んでドラッグ＆ドロップする。ZIPや解凍フォルダ自身はドラッグしない。
+4. Commit changesを押す。
+5. ルートのcollect.ymlを開き、鉛筆（Edit this file）を押す。
+6. ファイル名を「.github/workflows/collect.yml」に変更し、Commit changesする。
+7. ActionsタブにLARRYFIT crowd collection and websiteが現れます。
+
+APIキーは公開ファイルに書かず、Settings > Secrets and variables > Actionsへ。
