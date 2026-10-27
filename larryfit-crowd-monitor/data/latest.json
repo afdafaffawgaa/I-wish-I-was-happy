@@ -1,0 +1,13 @@
+{
+  "status": "not_collected",
+  "fetched_at_jst": null,
+  "source": "Google Maps via SerpApi",
+  "place": {
+    "name": "LARRY FiT 下館店",
+    "address": "茨城県筑西市乙863-2"
+  },
+  "unit": "relative_busyness_0_to_100_not_number_of_people",
+  "days": {},
+  "live": null,
+  "note": "No actual measurements have been collected yet."
+}

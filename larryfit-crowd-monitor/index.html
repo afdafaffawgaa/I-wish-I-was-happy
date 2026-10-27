@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LARRY FiT 下館店｜混雑度モニター</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b101c; --panel:#171f30; --muted:#9eaac2; --blue:#80aefe; --live:#70dbb6; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:radial-gradient(ellipse at 30% 0%, #172645 0%, var(--bg) 60%); color:#f5f7fc; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; min-height:100vh; }
+    main { max-width:940px; padding:38px 18px 80px; margin:auto; }
+    header { margin-bottom:26px; }
+    .eyebrow { letter-spacing:.15em; color:var(--blue); font-size:12px; font-weight:800; }
+    h1 { font-size:clamp(24px,5vw,34px); line-height:1.2; margin:8px 0 12px; }
+    h2 { margin:0 0 16px; font-size:19px; }
+    .muted { color:var(--muted); }
+    .card { padding:22px; background:rgba(23,31,48,.97); border:1px solid #2a354e; border-radius:18px; margin:18px 0; box-shadow:0 10px 30px #02050d45; }
+    .status { border-radius:8px; display:inline-block; padding:5px 9px; background:#26344c; font-size:12px; font-weight:800; }
+    .status.good { background:#173d35; color:#8fedc9; }
+    .status.bad { background:#4a3624; color:#ffd09a; }
+    .summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(185px,1fr)); gap:12px; }
+    .stat { padding:14px; background:#101a2a; border:1px solid #2c3b54; border-radius:12px; min-height:100px; }
+    .stat strong { display:block; font-size:24px; margin-top:6px; }
+    .stat small { color:var(--muted); }
+    .days { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+    button { border:1px solid #354761; border-radius:10px; color:#c5d3ea; background:#1d2a40; padding:9px 15px; font-size:14px; cursor:pointer; }
+    button[aria-pressed="true"] { color:#081322; background:#a9c5ff; border-color:#a9c5ff; font-weight:700; }
+    button:focus-visible { outline:2px solid #fff; outline-offset:3px; }
+    .bars { height:260px; display:grid; grid-template-columns:repeat(24,minmax(0,1fr)); gap:4px; align-items:end; border-bottom:1px solid #56657b; margin-top:30px; padding-bottom:0; background:repeating-linear-gradient(to top,transparent 0,transparent calc(25% - 1px),#2d3c52 calc(25% - 1px),#2d3c52 25%); }
+    .bar { border-radius:5px 5px 0 0; background:var(--blue); min-height:1px; position:relative; }
+    .bar.missing { min-height:0; background:transparent; }
+    .bar.quiet { background:#74d7be; }
+    .bar.peak { background:#f5ac79; }
+    .ticks { display:grid; grid-template-columns:repeat(24,minmax(0,1fr)); font-size:11px; color:var(--muted); margin-top:6px; }
+    .ticks span { text-align:left; }
+    .legend { font-size:13px; margin-top:17px; color:var(--muted); }
+    .notice { line-height:1.7; border-left:3px solid #edc080; padding:8px 0 8px 13px; color:#ffe0b5; }
+    .recommended { font-size:16px; line-height:2; }
+    a { color:#a9c5ff; }
+    code { font-size:12px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">POPULAR TIMES MONITOR</div>
+    <h1>LARRY FiT 下館店｜混雑度モニター</h1>
+    <div class="muted">Googleマップの「訪問数の多い時間帯」を定期取得して表示</div>
+  </header>
+  <section class="card" aria-live="polite">
+    <span id="status" class="status">読込中</span>
+    <p id="updated" class="muted">確認しています…</p>
+    <div class="summary">
+      <div class="stat"><small>現在のライブ混雑度（取得時）</small><strong id="live">—</strong><small id="live-note">ライブ情報がない場合は表示しません</small></div>
+      <div class="stat"><small>今の曜日・時刻の通常混雑度</small><strong id="typical">—</strong><small>0〜100の相対的な指数</small></div>
+      <div class="stat"><small>選択曜日の静かな時間帯</small><strong id="quiet">—</strong><small>データがある時間だけを比較</small></div>
+    </div>
+  </section>
+  <section class="card">
+    <h2>曜日別・時間別の混雑</h2>
+    <div id="days" class="days" aria-label="曜日を選択"></div>
+    <div id="warning" class="notice" hidden></div>
+    <div class="bars" id="bars" aria-label="24時間の相対混雑度の棒グラフ"></div>
+    <div class="ticks" id="ticks"></div>
+    <p id="description" class="legend">棒にカーソルを乗せると混雑度が表示されます。</p>
+  </section>
+  <section class="card">
+    <h2>使い方と注意点</h2>
+    <p>棒グラフは<strong>Googleが推定する曜日別の通常の混雑傾向</strong>です。ジムにいる人数の実数ではありません。緑が空きやすい時間帯、オレンジが混みやすい時間帯です。Googleがデータを提供しない時間は欠測として扱います。</p>
+    <p>ライブ値は提供される場合だけ表示します。学生の割合や利用者の属性は、このデータからは分かりません。最終的には店舗の混雑状況や現地の状況と照合してください。</p>
+    <p class="muted">データ：<a href="data/latest.json">最新JSON</a> / <a href="data/history.jsonl">取得履歴(JSONL)</a>　・　取得方法：SerpApi</p>
+  </section>
+</main>
+<script>
+  const labels = ['月','火','水','木','金','土','日'];
+  const names = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+  let doc = null;
+  let selected = (new Date().getDay() + 6) % 7;
+  const el = id => document.getElementById(id);
+  const hour = n => `${String(n).padStart(2,'0')}:00`;
+  function render() {
+    const days = (doc && doc.days) || {};
+    const scores = days[names[selected]] || Array(24).fill(null);
+    const available = scores.map((n,h)=>({n,h})).filter(x => typeof x.n === 'number');
+    const quiet = available.filter(x=>x.h>=6 && x.h<24).sort((a,b)=>a.n-b.n).slice(0,3);
+    el('quiet').textContent = quiet.length ? quiet.map(x => hour(x.h)).join(' / ') : '—';
+    el('bars').replaceChildren();
+    for (let i=0;i<24;i++) {
+      const value = scores[i];
+      const div = document.createElement('div');
+      const valid = typeof value === 'number';
+      div.className = 'bar' + (valid ? (value<=25 ? ' quiet' : value>=75 ? ' peak' : '') : ' missing');
+      div.style.height = valid ? `${Math.max(.4,value)}%` : '0';
+      div.title = `${hour(i)}：${valid ? '混雑指数 ' + value + '/100' : 'データなし'}`;
+      div.setAttribute('role','img');
+      div.setAttribute('aria-label',div.title);
+      el('bars').appendChild(div);
+    }
+    el('description').textContent = `${labels[selected]}曜日：${available.length}時間分の通常混雑データ。指数は相対値です。`;
+    [...el('days').children].forEach((button,i)=>button.setAttribute('aria-pressed', i===selected?'true':'false'));
+  }
+  labels.forEach((day,i)=>{
+    const button=document.createElement('button');
+    button.textContent=day;
+    button.setAttribute('aria-pressed','false');
+    button.addEventListener('click',()=>{ selected=i; render(); });
+    el('days').appendChild(button);
+  });
+  for(let i=0;i<24;i++){
+    const tick=document.createElement('span');
+    if(i%3===0) tick.textContent=`${i}時`;
+    el('ticks').appendChild(tick);
+  }
+  fetch('data/latest.json?cache=' + Date.now(), {cache:'no-store'})
+    .then(r=>{if(!r.ok) throw new Error('HTTP '+r.status); return r.json();})
+    .then(data=>{
+      doc=data;
+      el('updated').textContent = data.fetched_at_jst ? `最終取得：${new Date(data.fetched_at_jst).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})}（日本時間）` : '取得はまだ行われていません';
+      const ok = data.status==='ok';
+      el('status').textContent = ok?'取得成功':data.status==='unavailable'?'Google側に混雑データなし':'未取得';
+      el('status').className = 'status '+(ok?'good':'bad');
+      if(!ok){el('warning').hidden=false;el('warning').textContent=data.status==='unavailable'?'この店舗についてGoogleから混雑グラフが返されませんでした。「空いている」という意味ではありません。':'最初のGitHub Actionsの実行後にデータが表示されます。';}
+      const now = new Date();
+      const nowDay=(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Tokyo',weekday:'long'}).format(now)).toLowerCase();
+      const nowHour=Number(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Tokyo',hour:'2-digit',hourCycle:'h23'}).format(now));
+      const typical=data.days && data.days[nowDay] && data.days[nowDay][nowHour];
+      el('typical').textContent=typeof typical==='number'?`${typical}/100`:'—';
+      const live=data.live;
+      if(live && typeof live.score==='number'){
+        el('live').textContent=`${live.score}/100`;
+        el('live-note').textContent=`${labels[names.indexOf(live.day)] ?? live.day}曜日 ${hour(live.hour)}の取得時点（現在値とは限りません）`;
+      }
+      render();
+    })
+    .catch(e=>{el('status').textContent='読込失敗';el('status').className='status bad';el('updated').textContent=e.message;el('warning').hidden=false;el('warning').textContent='GitHub Pages（またはHTTPサーバー）から開いてください。';render();});
+</script>
+</body>
+</html>
