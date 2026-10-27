@@ -30,7 +30,7 @@ jobs:
         env:
           SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
           SERPAPI_PLACE_ID: ${{ secrets.SERPAPI_PLACE_ID }}
-        run: python collector.py
+        run: python collector_v3.py
       - name: Commit collected data
         run: |
           git config user.name "github-actions[bot]"
