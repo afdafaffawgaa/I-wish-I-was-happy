@@ -1,11 +1,12 @@
 {
   "status": "unavailable",
-  "fetched_at_jst": "2026-10-27T17:28:26+09:00",
-  "source": "Google Maps via SerpApi",
+  "fetched_at_jst": "2026-10-27T18:02:35+09:00",
+  "source": "Google Maps web UI (Playwright; experimental)",
   "source_engine": null,
   "place": {
     "name": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
-    "address": "〒308-0041 Ibaraki, Chikusei, Otsu, 863-2 やますビル 2号館"
+    "address": "〒308-0041 茨城県筑西市乙863-2 やますビル2号館",
+    "place_id": "ChIJmam1ug5VH2ARWhSeQUqRe1g"
   },
   "unit": "relative_busyness_0_to_100_not_number_of_people",
   "days": {
@@ -193,22 +194,29 @@
     ]
   },
   "live": null,
-  "diagnostics": {
-    "google_search_last_attempt_jst": "2026-10-27T17:28:26+09:00",
-    "attempts": [
-      {
-        "engine": "google_maps_place",
-        "result": "no_graph",
-        "popular_times_present": false,
-        "graph_hours": 0
-      },
-      {
-        "engine": "google_search_knowledge_graph",
-        "result": "not_the_target",
-        "knowledge_graph_title": "",
-        "knowledge_graph_present": true
-      }
-    ]
-  },
-  "note": "Neither tested SerpApi route returned a Popular Times graph for this place; this is not zero crowd."
+  "diagnostics": [
+    {
+      "locale": "en",
+      "url_path": "/maps/search/",
+      "error": null,
+      "rootCount": 0,
+      "groups": [],
+      "labelsSample": [],
+      "placeTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
+      "pageTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT - Google Maps",
+      "day_controls": []
+    },
+    {
+      "locale": "ja",
+      "url_path": "/maps/search/",
+      "error": null,
+      "rootCount": 0,
+      "groups": [],
+      "labelsSample": [],
+      "placeTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT",
+      "pageTitle": "「マッチョのいない月3,300円24時間ジム」LARRYFIT - Google マップ",
+      "day_controls": []
+    }
+  ],
+  "note": "Browser did not yield parseable Popular Times; this is NOT evidence that the store is empty."
 }
